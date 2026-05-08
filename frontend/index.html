@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic R&D Copilot V3</title>
+    <style>
+        :root {
+            --bg: #0d1117; --card: #161b22; --border: #30363d;
+            --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+            --green: #3fb950; --red: #f85149; --orange: #d2991d; --purple: #a371f7;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: -apple-system, "Segoe UI", sans-serif;
+            background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.6;
+        }
+        header {
+            background: var(--card); border-bottom: 1px solid var(--border);
+            padding: 14px 28px; display: flex; align-items: center; gap: 14px;
+        }
+        header h1 { font-size: 19px; }
+        header .badge {
+            font-size: 11px; padding: 3px 10px; border-radius: 99px;
+            background: rgba(163,113,247,0.15); color: var(--purple);
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 28px 20px; }
+
+        .panel {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 8px; padding: 22px; margin-bottom: 20px;
+        }
+        .panel h2 { font-size: 15px; margin-bottom: 14px; }
+
+        /* Pipeline steps */
+        .pipeline {
+            display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap;
+        }
+        .step {
+            flex: 1; min-width: 80px; text-align: center; padding: 10px 6px;
+            border-radius: 6px; background: var(--bg); border: 1px solid var(--border);
+            font-size: 11px; color: var(--muted);
+        }
+        .step.active { border-color: var(--accent); color: var(--accent); }
+        .step.done { border-color: var(--green); color: var(--green); }
+        .step.fail { border-color: var(--red); color: var(--red); }
+        .step .num { font-size: 18px; font-weight: 700; }
+
+        .form-row { display: flex; gap: 10px; margin-bottom: 12px; }
+        input, textarea {
+            flex: 1; padding: 10px 14px; border: 1px solid var(--border);
+            border-radius: 6px; background: var(--bg); color: var(--text); font-size: 13px;
+        }
+        input:focus, textarea:focus { border-color: var(--accent); outline: none; }
+        textarea { min-height: 90px; resize: vertical; }
+        button {
+            padding: 10px 22px; border: none; border-radius: 6px;
+            background: var(--accent); color: white; font-size: 13px; font-weight: 600;
+            cursor: pointer;
+        }
+        button:hover { opacity: 0.85; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        button.secondary { background: var(--border); }
+        button.purple { background: var(--purple); }
+
+        .hidden { display: none; }
+
+        /* Result cards */
+        .card {
+            background: var(--bg); border: 1px solid var(--border);
+            border-radius: 6px; padding: 14px; margin-bottom: 12px;
+        }
+        .card h3 { font-size: 13px; color: var(--accent); margin-bottom: 8px; }
+        .card pre {
+            background: #0d1117; border-radius: 4px; padding: 12px;
+            font-size: 12px; overflow-x: auto; white-space: pre-wrap;
+            border: 1px solid var(--border); max-height: 300px; overflow-y: auto;
+        }
+        .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        @media (max-width: 768px) { .result-grid { grid-template-columns: 1fr; } }
+
+        .tag {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 11px; margin: 2px; background: rgba(88,166,255,0.1); color: var(--accent);
+        }
+        .tag.green { background: rgba(63,185,80,0.15); color: var(--green); }
+        .tag.red { background: rgba(248,81,73,0.15); color: var(--red); }
+        .tag.orange { background: rgba(210,153,29,0.15); color: var(--orange); }
+
+        .spinner {
+            display: inline-block; width: 14px; height: 14px;
+            border: 2px solid var(--border); border-top-color: var(--accent);
+            border-radius: 50%; animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .checklist li { margin-left: 20px; font-size: 13px; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Agentic R&D Copilot</h1>
+    <span class="badge">V3 · 全链路</span>
+    <span style="margin-left:auto;font-size:12px;color:var(--muted);" id="health">○</span>
+</header>
+
+<div class="container">
+
+    <!-- Import -->
+    <div class="panel">
+        <h2>导入仓库</h2>
+        <div class="form-row">
+            <input type="text" id="repoUrl" placeholder="GitHub 仓库地址" />
+            <button onclick="importRepo()" id="importBtn">远程导入</button>
+        </div>
+        <div class="form-row">
+            <input type="text" id="localPath" placeholder="本地路径，如 C:\my-project" />
+            <button onclick="importLocal()" class="secondary">本地导入</button>
+        </div>
+        <div id="importMsg" class="hidden" style="margin-top:8px;font-size:13px;"></div>
+    </div>
+
+    <!-- Index + Analyze -->
+    <div class="panel hidden" id="panelActions">
+        <div class="form-row">
+            <button onclick="indexRepo()" id="indexBtn">建立索引</button>
+            <span id="indexMsg" style="font-size:12px;color:var(--muted);"></span>
+        </div>
+        <textarea id="issueText" placeholder="输入 Issue 描述...&#10;例如: 用户登录后偶发 500，日志显示 JWT decode failed"></textarea>
+        <div style="margin-top:10px;display:flex;gap:10px;">
+            <button onclick="analyze('basic')" id="btnBasic">V1 定位</button>
+            <button onclick="analyze('full')" id="btnFull" class="purple">V3 全链路</button>
+        </div>
+    </div>
+
+    <!-- Pipeline progress -->
+    <div class="panel hidden" id="panelPipeline">
+        <h2>执行链路</h2>
+        <div class="pipeline" id="pipeline">
+            <div class="step" id="s1"><div class="num">①</div>Issue分析</div>
+            <div class="step" id="s2"><div class="num">②</div>代码检索</div>
+            <div class="step" id="s3"><div class="num">③</div>Bug定位</div>
+            <div class="step" id="s4"><div class="num">④</div>Patch生成</div>
+            <div class="step" id="s5"><div class="num">⑤</div>测试验证</div>
+            <div class="step" id="s6"><div class="num">⑥</div>PR生成</div>
+        </div>
+    </div>
+
+    <!-- Results -->
+    <div class="panel hidden" id="panelResults">
+        <h2>分析结果</h2>
+
+        <div class="card" id="cardIssue"></div>
+        <div class="card" id="cardLocate"></div>
+        <div class="card hidden" id="cardPatch">
+            <h3>生成的 Patch</h3>
+            <pre id="patchDiff"></pre>
+        </div>
+        <div class="card hidden" id="cardVerify">
+            <h3>验证结果</h3>
+            <div id="verifyResults"></div>
+        </div>
+        <div class="card hidden" id="cardPR">
+            <h3>PR 内容</h3>
+            <div id="prContent"></div>
+        </div>
+
+        <h3 style="margin-top:14px;font-size:13px;">相关文件 (Top-5)</h3>
+        <div class="result-grid" id="topFiles"></div>
+        <h3 style="margin-top:14px;font-size:13px;">相关函数</h3>
+        <div class="result-grid" id="topFunctions"></div>
+    </div>
+
+</div>
+
+<script>
+    let REPO_ID = "";
+    let REPO_PATH = "";
+
+    async function health() {
+        try {
+            const r = await fetch('/api/health');
+            const d = await r.json();
+            document.getElementById('health').innerHTML = d.indexed ? '● 已索引' : '○ 就绪';
+            document.getElementById('health').style.color = d.indexed ? 'var(--green)' : 'var(--muted)';
+        } catch(e) {}
+    }
+    health(); setInterval(health, 30000);
+
+    function show(el) { document.getElementById(el).classList.remove('hidden'); }
+    function hide(el) { document.getElementById(el).classList.add('hidden'); }
+    function msg(el, text, color) {
+        const e = document.getElementById(el);
+        e.classList.remove('hidden');
+        e.innerHTML = `<span style="color:${color||'var(--text)'}">${text}</span>`;
+    }
+
+    async function importRepo() {
+        const url = document.getElementById('repoUrl').value.trim();
+        if (!url) return alert('请输入仓库地址');
+        msg('importMsg', '<span class="spinner"></span> clone中...');
+        try {
+            const r = await fetch('/api/repos/import', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({repo_url: url, branch: 'main'})
+            });
+            const d = await r.json();
+            REPO_ID = d.repo_id; REPO_PATH = d.local_path || '';
+            msg('importMsg', d.message, 'var(--green)');
+            show('panelActions');
+        } catch(e) { msg('importMsg', e.message, 'var(--red)'); }
+    }
+
+    async function importLocal() {
+        const path = document.getElementById('localPath').value.trim();
+        if (!path) return alert('请输入本地路径');
+        msg('importMsg', '<span class="spinner"></span> 导入中...');
+        try {
+            const r = await fetch('/api/repos/import-local', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({local_path: path})
+            });
+            const d = await r.json();
+            if (d.status === 'error') { msg('importMsg', d.message, 'var(--red)'); return; }
+            REPO_ID = d.repo_id; REPO_PATH = d.local_path || path;
+            msg('importMsg', d.message, 'var(--green)');
+            show('panelActions');
+        } catch(e) { msg('importMsg', e.message, 'var(--red)'); }
+    }
+
+    async function indexRepo() {
+        if (!REPO_ID) return alert('请先导入仓库');
+        const btn = document.getElementById('indexBtn');
+        btn.disabled = true; btn.textContent = '索引中...';
+        msg('indexMsg', '<span class="spinner"></span> 正在解析...');
+        try {
+            const r = await fetch(`/api/repos/${REPO_ID}/index`, {method:'POST'});
+            const d = await r.json();
+            const s = d.stats || {};
+            msg('indexMsg', `完成: ${s.total_chunks||0} chunks, ${s.functions||0} 函数`, 'var(--green)');
+        } catch(e) { msg('indexMsg', e.message, 'var(--red)'); }
+        btn.disabled = false; btn.textContent = '建立索引';
+    }
+
+    async function analyze(mode) {
+        const text = document.getElementById('issueText').value.trim();
+        if (!text) return alert('请输入 Issue');
+        if (!REPO_ID) return alert('请先导入并索引仓库');
+
+        const btn = mode === 'full' ? document.getElementById('btnFull') : document.getElementById('btnBasic');
+        btn.disabled = true; btn.textContent = '执行中...';
+
+        // Show pipeline
+        show('panelPipeline');
+        [1,2,3,4,5,6].forEach(i => {
+            document.getElementById('s'+i).className = 'step' + (i<=3||mode==='full' ? '' : ' hidden');
+        });
+        document.getElementById('s1').classList.add('active');
+
+        const endpoint = mode === 'full' ? '/api/issues/analyze-full' : '/api/issues/analyze';
+
+        try {
+            const r = await fetch(endpoint, {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({repo_id: REPO_ID, issue_text: text})
+            });
+            const d = await r.json();
+            const tr = await fetch(`/api/tasks/${d.task_id}`);
+            const task = await tr.json();
+
+            // Mark pipeline done
+            [1,2,3].forEach(i => document.getElementById('s'+i).classList.add('done'));
+            if (mode === 'full') [4,5,6].forEach(i => { document.getElementById('s'+i).classList.add('done'); });
+
+            renderResults(task.result, mode);
+            show('panelResults');
+        } catch(e) { alert('请求失败: ' + e.message); }
+        btn.disabled = false; btn.textContent = mode === 'full' ? 'V3 全链路' : 'V1 定位';
+    }
+
+    function renderResults(result, mode) {
+        if (!result) return;
+
+        // Issue analysis
+        const ia = result.issue_analysis || {};
+        document.getElementById('cardIssue').innerHTML = `
+            <h3>Issue 分析</h3>
+            <span class="tag">${ia.issue_type||'bug'}</span>
+            <span class="tag ${ia.severity==='critical'?'red':ia.severity==='high'?'orange':'green'}">${ia.severity||'medium'}</span>
+            <span class="tag">${ia.error_type||''}</span>
+            <p style="margin-top:6px;font-size:13px;"><strong>摘要:</strong> ${ia.summary||''}</p>
+            <p style="font-size:12px;color:var(--muted);">关键词: ${(ia.keywords||[]).join(', ')}</p>
+        `;
+
+        // Location
+        const loc = result.location || {};
+        document.getElementById('cardLocate').innerHTML = `
+            <h3>Bug 定位分析</h3>
+            <p style="font-size:13px;white-space:pre-line;">${loc.analysis||''}</p>
+            <p style="font-size:12px;color:var(--muted);">${loc.search_summary||''} | 建议从 <code style="color:var(--accent);">${loc.recommended_start||'N/A'}</code> 开始</p>
+        `;
+
+        // Patch (V3 only)
+        if (mode === 'full') {
+            const patch = result.patch || {};
+            if (!patch.error) {
+                show('cardPatch');
+                document.getElementById('patchDiff').textContent = patch.diff || '';
+                document.getElementById('cardPatch').innerHTML += `
+                    <p style="font-size:12px;margin-top:6px;">
+                        <span class="tag ${patch.risk_level==='low'?'green':'orange'}">风险: ${patch.risk_level||'medium'}</span>
+                        ${patch.explanation||''}
+                    </p>`;
+
+                // Verification
+                const ver = result.verification || {};
+                show('cardVerify');
+                document.getElementById('verifyResults').innerHTML = `
+                    <span class="tag ${ver.overall==='passed'?'green':'red'}">整体: ${ver.overall||'unknown'}</span>
+                    <span class="tag ${(ver.pytest||{}).status==='passed'?'green':'red'}">pytest: ${(ver.pytest||{}).status||'skipped'}</span>
+                    <span class="tag">ruff: ${(ver.ruff||{}).status||'skipped'}</span>
+                    <span class="tag">mypy: ${(ver.mypy||{}).status||'skipped'}</span>
+                    ${(ver.pytest||{}).error ? `<p style="font-size:11px;color:var(--red);">${ver.pytest.error}</p>` : ''}
+                `;
+
+                // PR
+                const pr = result.pr || {};
+                show('cardPR');
+                document.getElementById('prContent').innerHTML = `
+                    <p><strong>${pr.title||''}</strong></p>
+                    <p style="font-size:13px;white-space:pre-line;">${pr.description||''}</p>
+                    <p style="font-size:12px;color:var(--muted);margin-top:4px;">
+                        测试: ${pr.test_results||''} | ${pr.risk_assessment||''}
+                    </p>
+                    ${pr.checklist ? '<ul class="checklist">'+pr.checklist.map(c=>`<li>${c}</li>`).join('')+'</ul>' : ''}
+                `;
+            }
+        }
+
+        // Top files
+        document.getElementById('topFiles').innerHTML = (loc.top_files||[]).map(f => `
+            <div class="card">
+                <code style="color:var(--accent);">${f.file_path}</code>
+                <span class="tag">分数: ${f.score?.toFixed(3)}</span>
+                <span class="tag">${f.match_type||''}</span>
+            </div>
+        `).join('');
+
+        // Top functions
+        document.getElementById('topFunctions').innerHTML = (loc.top_functions||[]).map(f => `
+            <div class="card">
+                <code style="color:var(--accent);">${f.file_path}::${f.symbol_name}()</code>
+                <span class="tag">L${f.line}</span>
+                <span class="tag green">分数: ${f.score?.toFixed(3)}</span>
+                <pre>${(f.content_preview||'').slice(0,300)}</pre>
+            </div>
+        `).join('');
+    }
+</script>
+</body>
+</html>

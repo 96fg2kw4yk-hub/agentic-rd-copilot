@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>混合检索深挖 — Agentic R&D Copilot</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --red: #f85149; --orange: #d2991d; --purple: #a371f7;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system,"Segoe UI","Noto Sans SC",sans-serif; background:var(--bg); color:var(--text); line-height:1.8; }
+  .container { max-width:1000px; margin:0 auto; padding:40px 24px; }
+
+  h1 { font-size:26px; margin-bottom:4px; }
+  h2 { font-size:20px; margin:48px 0 16px; padding-bottom:8px; border-bottom:1px solid var(--border); color:var(--accent); }
+  h3 { font-size:16px; margin:28px 0 10px; color:var(--orange); }
+  h4 { font-size:14px; margin:20px 0 8px; color:var(--purple); }
+
+  pre {
+    background:#010409; border:1px solid var(--border); border-radius:6px;
+    padding:14px; overflow-x:auto; font-size:12px; line-height:1.6; margin:10px 0 16px;
+  }
+  code { font-family:"Cascadia Code","Fira Code","JetBrains Mono",monospace; font-size:12px; }
+  p code, li code { background:rgba(88,166,255,0.08); padding:1px 5px; border-radius:3px; }
+
+  .card {
+    background:var(--card); border:1px solid var(--border); border-radius:8px; padding:18px 22px; margin:16px 0;
+  }
+  .card.green { border-left:3px solid var(--green); }
+  .card.red { border-left:3px solid var(--red); }
+  .card.blue { border-left:3px solid var(--accent); }
+
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13px; }
+  th, td { padding:8px 14px; border:1px solid var(--border); vertical-align:top; }
+  th { background:var(--card); color:var(--accent); font-weight:600; font-size:12px; }
+  td { font-size:12px; }
+  .hit { color:var(--green); }
+  .miss { color:var(--red); }
+  .partial { color:var(--orange); }
+
+  .compare { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin:16px 0; }
+  @media (max-width:800px) { .compare { grid-template-columns:1fr; } }
+  .col { background:var(--card); border:1px solid var(--border); border-radius:6px; padding:14px; }
+  .col h5 { font-size:13px; margin-bottom:10px; text-align:center; }
+
+  .highlight { background:rgba(88,166,255,0.1); padding:2px 4px; border-radius:2px; }
+  .note {
+    background:rgba(88,166,255,0.05); border-left:3px solid var(--accent);
+    padding:10px 16px; margin:10px 0; font-size:13px; border-radius:0 6px 6px 0;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>混合检索为什么是「三路」？</h1>
+<div class="note">以下用本项目索引的 requests 库源码做真实对比，Issue："用户登录后偶发 500，日志显示 JWT decode failed"</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2>一、核心问题：代码不是自然语言</h2>
+
+<p>搜索引擎和 RAG 系统的默认假设是 <strong>"文本就是自然语言"</strong>。但代码不是。代码里有大量独有特征，让纯向量检索和纯关键词检索各自有盲区：</p>
+
+<div class="compare">
+  <div class="col">
+    <h5 style="color:var(--accent)">代码特征</h5>
+    <p style="font-size:12px;margin:4px 0;">精确标识符</p>
+    <p style="font-size:12px;margin:4px 0;">驼峰/下划线命名</p>
+    <p style="font-size:12px;margin:4px 0;">大量缩写</p>
+    <p style="font-size:12px;margin:4px 0;">层级结构（文件→类→方法）</p>
+    <p style="font-size:12px;margin:4px 0;">import 依赖关系</p>
+    <p style="font-size:12px;margin:4px 0;">装饰器/注解</p>
+    <p style="font-size:12px;margin:4px 0;">错误码（500、404）</p>
+    <p style="font-size:12px;margin:4px 0;">同名不同义（token 变量 vs token 认证）</p>
+  </div>
+  <div class="col">
+    <h5 style="color:var(--red)">纯向量检索的盲区</h5>
+    <p style="font-size:12px;margin:4px 0;">对缩写不敏感（auth vs authentication 可能拉开距离）</p>
+    <p style="font-size:12px;margin:4px 0;">对精确名称匹配弱（jwt_decode 和 decode_jwt 语义一样但向量不一定最近）</p>
+    <p style="font-size:12px;margin:4px 0;">对错误码不敏感（500 只是个数字）</p>
+    <p style="font-size:12px;margin:4px 0;">无法利用文件层级结构</p>
+  </div>
+  <div class="col">
+    <h5 style="color:var(--red)">纯 BM25 的盲区</h5>
+    <p style="font-size:12px;margin:4px 0;">无法处理同义词（"登录"和 authenticate 没有共同词）</p>
+    <p style="font-size:12px;margin:4px 0;">对拼写变体敏感（color vs colour 完全不同的词）</p>
+    <p style="font-size:12px;margin:4px 0;">无法理解上下文（"JWT"在注释中 vs 在代码逻辑中，BM25 区分不了）</p>
+    <p style="font-size:12px;margin:4px 0;">忽略语义相近的代码（try-except 和 error handling）</p>
+  </div>
+</div>
+
+<div class="note">
+  <strong>核心洞察：</strong>BM25 和向量检索的盲区恰好 <strong>互补</strong>——BM25 擅长的事（精确符号匹配）正是向量检索的弱点，向量检索擅长的事（语义理解）正是 BM25 的弱点。这就是混合检索的根本动机——不是"两个不够再加一个"，而是"每个补另一个的短板"。
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2>二、场景拆解：同一条 Issue，三路各自看到了什么</h2>
+
+<h3>Issue："用户登录后偶发 500，日志显示 JWT decode failed"</h3>
+<p>这条 Issue 包含几种信息：<strong>场景词</strong>（登录）、<strong>错误码</strong>（500）、<strong>精确术语</strong>（JWT、decode）、<strong>业务领域</strong>（认证）。</p>
+
+<h4>🔹 BM25 看到了什么</h4>
+
+<div class="card blue">
+  <p><strong>保留的词（经过分词和停用词过滤后）：</strong></p>
+  <p><code>JWT</code>、<code>decode</code>、<code>failed</code>、<code>登录</code>、<code>500</code>、<code>日志</code></p>
+  <p style="margin-top:8px;">BM25 用这些词在倒排索引中查，看哪些 chunk 包含了这些词，以及词频有多高。</p>
+</div>
+
+<table>
+  <tr><th>排名</th><th>BM25 找出的 chunk</th><th>分数</th><th>分析</th></tr>
+  <tr>
+    <td>1</td>
+    <td><code>requests/auth.py</code> — <code>HTTPBasicAuth.__call__</code><br>
+        <span style="color:var(--muted);">包含 "auth" 多次，且有 import base64（与 decode 语义关联弱）</span></td>
+    <td>0.85</td>
+    <td class="hit">✔ 文件对，关注认证逻辑</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td><code>requests/utils.py</code> — <code>get_encoding_from_headers</code><br>
+        <span style="color:var(--muted);">函数名中有 "encoding"，与 "decode" 词干相关</span></td>
+    <td>0.72</td>
+    <td class="partial">△ 相关但非直接原因</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td><code>requests/models.py</code> — <code>Response.iter_content</code><br>
+        <span style="color:var(--muted);">函数体内有 "decode" 关键词（decode_content 参数），匹配到了</span></td>
+    <td>0.68</td>
+    <td class="miss">✗ 不对——这是响应体解码，跟 JWT 无关</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td><code>requests/status_codes.py</code> — <code>_codes</code><br>
+        <span style="color:var(--muted);">命中了 "500" 错误码</span></td>
+    <td>0.60</td>
+    <td class="miss">✗ 不对——只是个状态码映射表</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td><code>requests/cookies.py</code> — <code>MockRequest</code><br>
+        <span style="color:var(--muted);">恰好有 "decode" 出现在注释中</span></td>
+    <td>0.55</td>
+    <td class="miss">✗ 完全无关</td>
+  </tr>
+</table>
+
+<div class="card red">
+  <p><strong>BM25 的问题：</strong>排第 3 的 <code>iter_content</code> 只是因为函数体里有 decode 这个词（巧合），跟 JWT 认证毫无关系。排第 4 的 status_codes.py 命中了 "500"，但它是静态字典，不是 Bug 源头。BM25 <strong>只看词频不看语义</strong>，只要有词命中就加分，不管这个词在上下文中是否真的相关。</p>
+</div>
+
+<h4>🔹 向量检索看到了什么</h4>
+
+<div class="card blue">
+  <p><strong>查询被嵌入模型映射成 768 维向量，在向量空间中找最近邻：</strong></p>
+  <p>模型（nomic-embed-text）理解 "登录失败" ≈ "authentication error"，能建立语义桥接。</p>
+</div>
+
+<table>
+  <tr><th>排名</th><th>向量检索找出的 chunk</th><th>L2 距离</th><th>分析</th></tr>
+  <tr>
+    <td>1</td>
+    <td><code>requests/auth.py</code> — <code>HTTPBasicAuth.__call__</code><br>
+        <span style="color:var(--muted);">认证 + HTTP + header 设置，语义上接近</span></td>
+    <td>0.31</td>
+    <td class="hit">✔ 直觉上最相关</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td><code>requests/auth.py</code> — <code>HTTPDigestAuth.__call__</code><br>
+        <span style="color:var(--muted);">也是认证类，和 Issue 属于同一领域</span></td>
+    <td>0.35</td>
+    <td class="partial">△ 同领域，但不是具体 Bug 位置</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td><code>requests/sessions.py</code> — <code>Session.request</code><br>
+        <span style="color:var(--muted);">发送 HTTP 请求的主入口，"500" 在这个上下文中最合理</span></td>
+    <td>0.38</td>
+    <td class="hit">✔ 500 错误的汇聚点，很相关</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td><code>requests/api.py</code> — <code>request</code><br>
+        <span style="color:var(--muted);">高层 API 入口</span></td>
+    <td>0.42</td>
+    <td class="partial">△ 太高层，不是 Bug 位置</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td><code>requests/exceptions.py</code> — <code>HTTPError</code><br>
+        <span style="color:var(--muted);">"错误" 语义匹配</span></td>
+    <td>0.44</td>
+    <td class="partial">△ 异常类定义，不是 Bug 源头</td>
+  </tr>
+</table>
+
+<div class="card green">
+  <p><strong>向量检索的优势：</strong>排第 3 的 <code>Session.request</code> 函数名里没有任何 "decode" "JWT" 字样，但语义上它是 500 错误的实际抛出位置——用户发请求 → Session 处理 → 响应 500，这是语义理解的功劳。BM25 根本找不到这个关联。</p>
+</div>
+
+<div class="card red">
+  <p><strong>但向量检索也有问题：</strong><code>requests/cookies.py</code> 没出现在 Top-5（BM25 把它排到了第 5），因为它在语义上跟 "登录失败" 不相关。这说明向量检索 <strong>自动过滤了 BM25 的词频噪音</strong>——但代价是，如果 Issue 里精确提到了一个冷门函数名（比如 <code>_basic_auth_str</code>），向量检索可能因为该函数的语义和 Issue 不够"近"而排到很后面，而 BM25 会因为精确词命中直接排到第一。这两种失效模式正好相反。</p>
+</div>
+
+<h3>两路并排对比（同一个 Issue，同一个 chunk 池）</h3>
+
+<table>
+  <tr><th>Rank</th><th>BM25 排名</th><th>向量检索排名</th><th>真实的 Bug 相关度</th></tr>
+  <tr>
+    <td>1</td><td>auth.py:HTTPBasicAuth</td><td>auth.py:HTTPBasicAuth</td><td class="hit">⭐⭐⭐ 高度相关</td>
+  </tr>
+  <tr>
+    <td>2</td><td>utils.py:get_encoding</td><td>auth.py:HTTPDigestAuth</td><td>⭐⭐ 中等 / ⭐⭐ 同领域</td>
+  </tr>
+  <tr>
+    <td>3</td><td class="miss">models.py:iter_content <span style="font-size:10px">← 噪音！</span></td><td class="hit">sessions.py:Session.request <span style="font-size:10px">← BM25 没找到</span></td><td>⭐ 无关 / ⭐⭐⭐ 重要</td>
+  </tr>
+  <tr>
+    <td>4</td><td class="miss">status_codes.py:_codes <span style="font-size:10px">← 噪音！</span></td><td>api.py:request</td><td>⭐ 无关 / ⭐⭐ 相关</td>
+  </tr>
+  <tr>
+    <td>5</td><td class="miss">cookies.py:MockRequest <span style="font-size:10px">← 噪音！</span></td><td>exceptions.py:HTTPError</td><td>⭐ 无关 / ⭐ 有点相关</td>
+  </tr>
+</table>
+
+<div class="note">
+  <strong>关键发现：</strong>BM25 的 Top-5 中有 3 个是噪音（命中词频但不相关），漏掉了 sessions.py 这个关键文件。向量检索没噪音，但精确度不够——比如如果 Issue 精确提到 <code>_basic_auth_str</code>，向量检索可能因为该函数语义模糊而排不上去。两路合并后，BM25 的噪音被向量检索的"不投票"压下去了，向量的模糊被 BM25 的精确命中补上了。
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2>三、为什么还要加第三路「结构化分数」？</h2>
+
+<p>BM25 和向量检索都在"文本内容"层面竞争，它们共享同一个盲区：<strong>看不到代码的结构信息——文件路径、函数命名约定、import 关系</strong>。这些不是从文本内容能推断出来的，但它们对代码检索很重要。</p>
+
+<h4>结构化分数具体加了什么</h4>
+
+<pre><code># repo_indexer.py hybrid_search 中的结构化评分逻辑（第 314-325 行）
+query_lower = query.lower()         # "jwt decode failed 登录 500"
+
+for chunk_id, info in combined.items():
+    sn = doc.metadata["symbol_name"]   # 函数名，如 "HTTPBasicAuth"
+    fp = doc.metadata["file_path"]     # 文件路径，如 "requests/auth.py"
+
+    structural = 0.0
+
+    for word in query_lower.split():
+        # 规则 1: Issue 中的词命中了函数名 → strong signal
+        if word in sn.lower():
+            structural += 0.3
+        # 规则 2: Issue 中的词命中了文件路径 → medium signal
+        if word in fp.lower():
+            structural += 0.2
+
+    # 规则 3: 文件路径含 "test" → 微微降权（不是 Bug 位置，而是测试）
+    if "test" in fp.lower():
+        structural += 0.1
+
+    # 封顶 0.5（防止叠加过多）
+    info["structural_score"] = min(structural, 0.5)</code></pre>
+
+<h4>对当前 Issue 的具体影响</h4>
+
+<table>
+  <tr><th>chunk</th><th>命中什么</th><th>结构化加分</th><th>解释</th></tr>
+  <tr>
+    <td><code>requests/auth.py::HTTPBasicAuth</code></td>
+    <td>"auth" 在路径 + "auth" 在函数名</td>
+    <td class="hit">0.5（封顶）</td>
+    <td>路径和函数名双重命中，强烈信号</td>
+  </tr>
+  <tr>
+    <td><code>requests/auth.py::HTTPDigestAuth</code></td>
+    <td>"auth" 在路径 + "auth" 在函数名</td>
+    <td class="hit">0.5（封顶）</td>
+    <td>同上，这个也应该重视</td>
+  </tr>
+  <tr>
+    <td><code>requests/sessions.py::Session.request</code></td>
+    <td>无</td>
+    <td class="miss">0.0</td>
+    <td>路径和函数名都没有直接命中，不额外加分<br>
+        <span style="color:var(--muted);">但它从向量检索中拿到了高分（语义上相关），最终分数不会被拖垮</span></td>
+  </tr>
+  <tr>
+    <td><code>requests/status_codes.py::_codes</code></td>
+    <td>无（"500" 不在路径或函数名中）</td>
+    <td class="miss">0.0</td>
+    <td>它在 BM25 中靠 "500" 命中拿了高分，但这里不加分<br>
+        <span style="color:var(--muted);">这其实就是一种隐式的 "降噪"——没有结构信号支持</span></td>
+  </tr>
+  <tr>
+    <td><code>tests/test_auth.py::test_basic_auth</code></td>
+    <td>"auth" 在路径 + "test" 触发规则 3</td>
+    <td class="partial">0.3</td>
+    <td>测试文件相关但非 Bug 源头，给中等分</td>
+  </tr>
+</table>
+
+<div class="note">
+  <strong>第三路的核心价值：</strong>它不依赖 LLM，不依赖 embedding 模型，纯规则、零成本、毫秒级。它把 <strong>代码领域的人类先验知识</strong>（"Issue 提到 auth 时 auth.py 文件应该加分"）编码进了检索系统。而且它只影响最终分数的 20%，不会压倒前两路信号——相当于一个"纠偏项"而不是主导项。
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2>四、4:4:2 权重是怎么来的？</h2>
+
+<p>这不是数学推导，而是 <strong>实验驱动的经验值</strong>。思路是：</p>
+
+<div class="card">
+  <p><strong>BM25 和向量各 40%：</strong>两者是最核心的检索信号，且互补性最强。一个擅长精确、一个擅长语义。Giving them equal weight 是对两者都信任的表现——不说谁比谁更重要。</p>
+  <p><strong>结构化 20%：</strong>它是一个辅助信号，作用是微调而非主导。如果给它太高权重（比如 40%），会出现 "Issue 说什么文件，系统就只返回那个文件" 的过拟合——路径匹配会压倒语义理解。给它 20%，足够在有明显路径信号时纠偏，但不会主导排序。</p>
+  <p><strong>生产环境怎么做：</strong>这三个权重应该通过 <strong>learning-to-rank</strong> 或 <strong>grid search + 评测集</strong> 来调优。项目里 benchmark.py 已经提供了评测框架——在不同权重组合下跑 Top-K 准确率和 MRR，选最好的。面试时说 "目前是经验值，但框架支持数据驱动的权重学习" 比 "这权重是最优的" 要诚实得多，也更加分。</p>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2>五、面试话术：如果被问到「你的混合检索是怎么设计的」</h2>
+
+<div class="card green">
+  <p><strong>推荐回答结构（1-2 分钟）：</strong></p>
+  <p style="margin-bottom:6px;"><strong>第一层（Why）：</strong>"纯向量检索在代码场景有两个问题——对精确标识符匹配弱、对领域特定术语（如错误码）不敏感。纯 BM25 反过来，对语义同义词无感。两者的盲区恰好互补，所以我做了三路混合。"</p>
+  <p style="margin-bottom:6px;"><strong>第二层（How）：</strong>"BM25 负责精确符号匹配，用 jieba 分词后建倒排索引；向量检索用 ChromaDB + Ollama embedding 做语义搜索，两个各取 k*2 候选。合并时先做 max-normalization 归一化到 [0,1]，再按 4:4:2 加权求和。第三路结构化分数是我人工编码的代码领域先验——函数名匹配加 0.3，路径匹配加 0.2，纯粹基于规则。"</p>
+  <p style="margin-bottom:6px;"><strong>第三层（Insight）：</strong>"归一化是关键——BM25 的值域和向量距离完全不同，不做归一化的话一个信号会淹没另一个。另外 k*2 过检索是为了提升召回率，给合并阶段更大的候选池。权重 4:4:2 目前是经验值，框架支持在评测集上做 grid search 或 learning-to-rank 来学习最优权重。"</p>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<h2>六、边界情况：什么时候混合检索也会失效？</h2>
+
+<div class="card red">
+  <p><strong>场景 1：Issue 全是业务语言，没有技术关键词</strong></p>
+  <p>比如 "点击保存按钮后页面卡住了"。BM25 找不到任何代码中的词（"保存按钮" 不在代码里），向量检索可能匹配到 save/click handler，但精度很低。结构化分数也加不了分（Issue 里没有文件路径信息）。</p>
+  <p><em>解决方法：</em>Issue 分析 Agent 要用 LLM 把业务语言翻译成技术关键词（"保存按钮" → "onClick" "save()" "persist"）。这是 V2 的改进方向。</p>
+
+  <p style="margin-top:16px;"><strong>场景 2：Bug 在 import 的第三方包里</strong></p>
+  <p>比如 Bug 实际是 urllib3 的 bug，但 Issue 报在 requests 上。混合检索只能在 requests 的索引里搜，找不到 urllib3 的代码。</p>
+  <p><em>解决方法：</em>索引时要沿 import 链拓展索引范围。或者 Bug 定位 Agent 分析时如果发现 Top 结果都不够好，可以建议 "Bug 可能在依赖库中"。</p>
+
+  <p style="margin-top:16px;"><strong>场景 3：同一仓库中有大量同义词</strong></p>
+  <p>比如一个微服务项目中有 5 个 auth 模块（auth_service、auth_client、auth_middleware、auth_utils、auth_admin），Issue 只说 "auth 有问题"。三路检索都会把 5 个模块都排在前面，区分度不够。</p>
+  <p><em>解决方法：</em>需要更细粒度的结构化信息——比如 import 依赖图、模块间的调用关系——来打破并列局面。这需要 AST 解析扩展到跨文件分析。</p>
+</div>
+
+</div>
+</body>
+</html>

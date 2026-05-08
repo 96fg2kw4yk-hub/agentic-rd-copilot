@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic R&amp;D Copilot — 源码深度解析与面试备战</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --red: #f85149; --orange: #d2991d; --purple: #a371f7;
+    --sidebar-w: 260px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, "Segoe UI", "Noto Sans SC", sans-serif; background:var(--bg); color:var(--text); line-height:1.75; }
+  /* ── Sidebar ── */
+  .sidebar {
+    position:fixed; left:0; top:0; bottom:0; width:var(--sidebar-w);
+    background:var(--card); border-right:1px solid var(--border);
+    overflow-y:auto; padding:20px 0; z-index:10;
+  }
+  .sidebar h2 { font-size:14px; color:var(--purple); padding:0 20px 12px; border-bottom:1px solid var(--border); margin-bottom:8px; }
+  .sidebar nav a {
+    display:block; padding:6px 20px; font-size:12px; color:var(--muted);
+    text-decoration:none; border-left:2px solid transparent; transition:.15s;
+  }
+  .sidebar nav a:hover, .sidebar nav a.active { color:var(--accent); border-left-color:var(--accent); background:rgba(88,166,255,0.05); }
+  .sidebar nav .sub { padding-left:36px; font-size:11px; }
+  .sidebar .tag { display:inline-block; margin:0 2px; padding:1px 6px; border-radius:3px; font-size:10px; }
+  .sidebar .tag.iv { background:rgba(163,113,247,0.15); color:var(--purple); }
+
+  /* ── Main ── */
+  .main { margin-left:var(--sidebar-w); padding:40px 60px 80px; max-width:960px; }
+  h1 { font-size:28px; margin-bottom:6px; }
+  h1 .ver { font-size:14px; color:var(--muted); font-weight:400; margin-left:10px; }
+  h2 { font-size:20px; margin:48px 0 16px; padding-bottom:10px; border-bottom:1px solid var(--border); color:var(--accent); }
+  h3 { font-size:16px; margin:32px 0 12px; color:var(--text); }
+  h4 { font-size:14px; margin:20px 0 8px; color:var(--orange); }
+
+  p { margin-bottom:14px; font-size:14px; }
+  strong { color:#fff; }
+  em { color:var(--muted); }
+
+  /* Code */
+  pre {
+    background: #010409; border:1px solid var(--border); border-radius:6px;
+    padding:16px; overflow-x:auto; font-size:12px; line-height:1.6;
+    margin:10px 0 18px; tab-size:4;
+  }
+  code { font-family:"Cascadia Code","Fira Code","JetBrains Mono",monospace; font-size:12px; }
+  p code, li code { background:rgba(88,166,255,0.08); padding:1px 5px; border-radius:3px; }
+
+  /* Cards */
+  .card {
+    background:var(--card); border:1px solid var(--border); border-radius:8px;
+    padding:18px 22px; margin:16px 0;
+  }
+  .card.iv { border-left:3px solid var(--purple); }
+  .card.tip { border-left:3px solid var(--green); }
+  .card.warn { border-left:3px solid var(--orange); }
+
+  /* Badges */
+  .badge {
+    display:inline-block; padding:2px 10px; border-radius:99px; font-size:11px; font-weight:600;
+  }
+  .badge.purple { background:rgba(163,113,247,0.15); color:var(--purple); }
+  .badge.green { background:rgba(63,185,80,0.15); color:var(--green); }
+  .badge.orange { background:rgba(210,153,29,0.15); color:var(--orange); }
+  .badge.blue { background:rgba(88,166,255,0.12); color:var(--accent); }
+
+  /* Tables */
+  table { width:100%; border-collapse:collapse; margin:16px 0; font-size:13px; }
+  th, td { padding:8px 14px; border:1px solid var(--border); text-align:left; }
+  th { background:var(--card); color:var(--accent); font-weight:600; }
+  tr:nth-child(even) { background:rgba(255,255,255,0.02); }
+
+  /* Diagrams */
+  .flow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:16px 0; }
+  .flow .node {
+    padding:8px 16px; border-radius:6px; background:var(--card); border:1px solid var(--border);
+    font-size:12px; text-align:center; white-space:nowrap;
+  }
+  .flow .arrow { color:var(--muted); font-size:18px; }
+  .flow .node.entry { border-color:var(--green); }
+  .flow .node.end { border-color:var(--red); }
+
+  /* QA block */
+  .qa { margin:10px 0; }
+  .qa .q { font-weight:700; color:var(--accent); cursor:pointer; padding:8px 0; }
+  .qa .a { padding:8px 0 8px 16px; border-left:2px solid var(--border); font-size:13px; display:none; }
+  .qa.open .a { display:block; }
+  .qa .q::before { content:"▸ "; }
+  .qa.open .q::before { content:"▾ "; }
+
+  /* Scroll spy */
+  @media (max-width:900px) {
+    .sidebar { display:none; }
+    .main { margin-left:0; padding:20px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ SIDEBAR ═══════════ -->
+<aside class="sidebar">
+  <h2>📖 学习导航</h2>
+  <nav id="nav">
+    <a href="#overview">项目概览</a>
+    <a href="#architecture" class="sub">系统架构</a>
+    <a href="#why-design" class="sub">设计思想与动机</a>
+    <a href="#tech-stack" class="sub">技术栈选型</a>
+    <a href="#config" class="sub">config.py 配置</a>
+    <a href="#ast-parser">AST 解析器</a>
+    <a href="#repo-indexer">仓库索引器</a>
+    <a href="#issue-analyzer">Issue 分析 Agent</a>
+    <a href="#bug-locator">Bug 定位 Agent</a>
+    <a href="#workflow">工作流编排</a>
+    <a href="#main">FastAPI 服务</a>
+    <a href="#patch-generator">Patch 生成 Agent</a>
+    <a href="#pr-agent">PR Agent</a>
+    <a href="#test-runner">测试执行器</a>
+    <a href="#benchmark">评测模块</a>
+    <a href="#frontend">Web 前端</a>
+    <a href="#interview">面试备战 <span class="tag iv">核心</span></a>
+    <a href="#qa-arch" class="sub">架构设计类</a>
+    <a href="#qa-search" class="sub">检索系统类</a>
+    <a href="#qa-agent" class="sub">Agent 设计类</a>
+    <a href="#qa-code" class="sub">代码实现类</a>
+    <a href="#qa-scenario" class="sub">场景设计类</a>
+  </nav>
+</aside>
+
+<!-- ═══════════ MAIN CONTENT ═══════════ -->
+<main class="main">
+
+<!-- ────────── 1. 概览 ────────── -->
+<h1 id="overview">Agentic R&amp;D Copilot<span class="ver">V3 源码深度解析</span></h1>
+
+<div class="card">
+  <p><strong>一句话定位：</strong>这是一个基于 <strong>LangGraph 多 Agent 编排</strong>的 AI 驱动代码修复系统。给定一个 Issue（Bug 描述），系统自动完成：理解问题 → 检索相关代码 → 定位 Bug 位置 → 生成修复 Patch → 运行测试验证 → 生成 Pull Request。</p>
+  <p><span class="badge purple">校招面试价值</span> 这个项目覆盖了 LLM 应用开发中最核心的五个领域：<strong>Agent 编排</strong>、<strong>RAG 检索增强</strong>、<strong>代码理解（AST）</strong>、<strong>系统工程（FastAPI）</strong>、<strong>评测体系</strong>。是展示 AI 工程能力的绝佳项目。</p>
+</div>
+
+<!-- ────────── 2. 架构 ────────── -->
+<h2 id="architecture">系统架构</h2>
+
+<p>先建立全局认知。整个系统分为 <strong>三层 + 一条链路</strong>：</p>
+
+<div class="flow" style="justify-content:center;">
+  <div class="node entry">🌐 Web 前端</div><span class="arrow">→</span>
+  <div class="node">⚡ FastAPI</div><span class="arrow">→</span>
+  <div class="node">🔄 LangGraph 工作流</div><span class="arrow">→</span>
+  <div class="node">🤖 6 个 Agent</div><span class="arrow">→</span>
+  <div class="node end">📊 结果输出</div>
+</div>
+
+<table>
+  <tr><th>层次</th><th>文件</th><th>职责</th></tr>
+  <tr><td>展示层</td><td><code>frontend/index.html</code></td><td>原生 HTML/CSS/JS，极简面板操作</td></tr>
+  <tr><td>API 层</td><td><code>backend/main.py</code></td><td>FastAPI 路由，请求调度，任务管理</td></tr>
+  <tr><td>编排层</td><td><code>backend/workflow.py</code></td><td>LangGraph StateGraph，6 节点 DAG</td></tr>
+  <tr><td>Agent 层</td><td><code>backend/agents/</code></td><td>4 个 LLM Agent，各司其职</td></tr>
+  <tr><td>索引层</td><td><code>backend/indexer/</code></td><td>AST 解析 + 向量索引 + BM25 倒排</td></tr>
+  <tr><td>工具层</td><td><code>backend/tools/</code></td><td>pytest / ruff / mypy 本地执行</td></tr>
+  <tr><td>评估层</td><td><code>backend/eval/</code></td><td>Top-K 命中率、MRR 等指标</td></tr>
+</table>
+
+<div class="card tip">
+  <strong>面试话术：</strong>"这是一个典型的分层架构。展示层负责用户交互，API 层做请求路由和任务管理，编排层用 LangGraph 的 StateGraph 实现多 Agent 的有向无环图（DAG）调度，Agent 层每个 Agent 是独立职责的 LLM 调用单元，索引层提供混合检索引擎支撑 Agent 的代码检索需求。分层的好处是每一层都可以独立测试和替换，比如你可以把 Ollama 换成 OpenAI 而不影响其他层。"
+</div>
+
+<!-- ────────── 3. 设计思想 ────────── -->
+<h2 id="why-design">设计思想与动机</h2>
+
+<h3>为什么要做这个项目？</h3>
+<p>在企业中，一个完整的 Bug 修复流程通常要经过：看 Issue → 理解问题 → 找到对应代码 → 写修复 → 跑测试 → 提交 PR。这个过程中，<strong>最耗时的是「定位代码」和「理解上下文」</strong>。这个项目让 LLM 来串起整个链路，把人从重复劳动中解放出来。</p>
+
+<h3>核心设计决策**
+
+<div class="card">
+  <h4>决策①：为什么用 LangGraph 而不是手动编排？</h4>
+  <p>LangGraph 提供了 <strong>状态图（StateGraph）+ 条件边（conditional edge）</strong> 的能力。在 V1 只有 3 个节点，手动写串行调用很简单；但 V3 扩展到 6 个节点后，需要支持 "基础模式" 和 "全链路模式" 的分支决策。LangGraph 的 conditional_edges 天然支持这种分支，比 if-else 更可维护和可扩展。同时 StateGraph 的状态传递机制保证了每个节点都能访问全量上下文。</p>
+</div>
+
+<div class="card">
+  <h4>决策②：为什么混合检索（BM25 + 向量 + 结构化）？</h4>
+  <p>纯向量检索在代码场景有严重缺陷：变量名 <code>token</code> 和 <code>jwt_token</code> 在语义上很近，但纯关键词匹配可能更精确。反过来，Issue 中说 "登录失败"，向量检索能找到语义相关的代码如 <code>authenticate</code>、<code>verify_password</code>，而 BM25 的关键词匹配则很难建立这种关联。<strong>两种方法互补</strong>：BM25 保证精确匹配（函数名、错误码），向量检索保证语义覆盖。结构化分数（路径匹配、函数名匹配）则是代码领域的先验知识注入——比如 Issue 提到 "auth"，那么 <code>auth.py</code> 文件天然应该加分。</p>
+</div>
+
+<div class="card">
+  <h4>决策③：为什么每个 Agent 都设计了 fallback？</h4>
+  <p>LLM 会挂（Ollama 服务宕机、模型超时、返回格式错误），但系统不能跟着挂。每个 Agent 都有 try-except + degenerated logic。比如 IssueAnalyzer 在 LLM 不可用时用正则做退化分析（匹配"AttributeError"、"500"等），PatchGenerator 在 LLM 失败时生成基础 diff 框架。这是<strong>生产级 AI 系统的基本素养</strong>——永远有 Plan B。</p>
+</div>
+
+<div class="card">
+  <h4>决策④：AST 解析 vs 纯文本分段</h4>
+  <p>代码不是普通文本。如果按固定行数切分代码（如每 100 行一段），很可能把函数拦腰截断。AST 解析能语义感知——以函数、类为最小单元切割，每个 chunk 是有意义的代码片段。同时 AST 还能提取 import 关系、参数列表、装饰器等结构化信息，这些在后续检索和推理中都很关键。</p>
+</div>
+
+<!-- ────────── 4. 技术栈 ────────── -->
+<h2 id="tech-stack">技术栈选型</h2>
+
+<table>
+  <tr><th>需求</th><th>技术</th><th>为什么选它</th></tr>
+  <tr><td>Agent 编排</td><td>LangGraph</td><td>状态图天然适合多步骤工作流，conditional edge 支持分支</td></tr>
+  <tr><td>LLM 调用</td><td>Ollama + qwen2.5:7b</td><td>本地运行零成本，适合个人开发；qwen 中文理解好</td></tr>
+  <tr><td>向量检索</td><td>ChromaDB</td><td>轻量级，持久化简单，Python 原生，不需要额外服务</td></tr>
+  <tr><td>关键词检索</td><td>BM25Okapi + jieba</td><td>BM25 是业界标准的关键词打分算法；jieba 做中文分词</td></tr>
+  <tr><td>Web 框架</td><td>FastAPI</td><td>异步原生，自动生成 OpenAPI 文档，类型提示友好</td></tr>
+  <tr><td>代码解析</td><td>Python AST</td><td>标准库，零依赖，精确度 100%</td></tr>
+</table>
+
+<!-- ────────── 5. config.py ────────── -->
+<h2 id="config">config.py — 配置中心</h2>
+
+<div class="card iv"><span class="badge purple">面试考点</span> 为什么要把配置集中管理？</div>
+
+<pre><code>BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+REPOS_DIR = os.path.join(DATA_DIR, "repos")       # clone 下来的仓库
+INDEXES_DIR = os.path.join(DATA_DIR, "indexes")    # 向量索引 + BM25</code></pre>
+
+<p><strong>设计要点：</strong></p>
+<p>① <strong>路径全部基于 BASE_DIR 动态计算</strong>，而不是写死绝对路径。这保证了项目的可移植性——换一台机器 clone 下来就能跑。</p>
+<p>② <strong>所有 magic number 都提取为命名常量</strong>。比如 <code>BM25_WEIGHT = 0.4</code> 而不是在代码里写 <code>0.4</code>。这样做有两个好处：一是调整参数时只需要改一处，二是参数的含义自文档化——你看到 <code>BM25_WEIGHT</code> 就知道这是混合检索中 BM25 的权重。</p>
+<p>③ <code>os.makedirs(d, exist_ok=True)</code> 在模块加载时就创建好所有目录。这叫 <strong>"模块级初始化"</strong>，确保后续代码不需要检查目录是否存在。</p>
+<p>④ <strong>为什么 BM25:向量:结构化 = 4:4:2？</strong> 这不是拍脑袋的。BM25 和向量各占 40% 是因为它们在代码检索中互补性最强；结构化占 20% 是因为路径/函数名匹配不能太重，否则会掩盖真正的语义相关性。实际项目中这个比例应该通过 A/B 测试来调优。</p>
+
+<!-- ────────── 6. AST 解析器 ────────── -->
+<h2 id="ast-parser">ast_parser.py — AST 代码解析器</h2>
+
+<div class="card iv"><span class="badge purple">面试考点</span> Python AST 模块的理解、代码结构化提取</div>
+
+<h3>核心数据结构：CodeChunk</h3>
+
+<pre><code>@dataclass
+class CodeChunk:   # 代码片段的结构化表示
+    chunk_id: str           # 全局唯一 ID："{repo_id}:{file_path}:{symbol_name}"
+    repo_id: str
+    file_path: str
+    symbol_type: str        # "file" | "class" | "function" | "method" | "test"
+    symbol_name: str        # 函数名/类名
+    start_line: int
+    end_line: int
+    content: str            # 原始代码
+    summary: str            # 自动生成的摘要
+    docstring: str
+    imports: list[str]
+    parent_class: str       # 如果是方法，记录所属类名
+    decorators: list[str]   # @pytest.mark.skip 等
+    params: list[str]       # 参数名列表
+    returns: str</code></pre>
+
+<p><strong>为什么选择 dataclass 而不是 dict？</strong> dataclass 有类型提示，IDE 能自动补全和检查。相比之下，dict 的 key 是字符串，容易拼错，IDE 也帮不了你。在大型项目中，dataclass 的可维护性远好于 dict。</p>
+
+<h3>核心方法：parse_file()</h3>
+
+<pre><code>def parse_file(self, repo_id, file_path, source_code) -> list[CodeChunk]:
+    chunks = []
+    # 1. 文件级 chunk —— 整文件概览
+    file_chunk = CodeChunk(symbol_type="file", ...)
+    chunks.append(file_chunk)
+
+    # 2. AST 解析
+    tree = ast.parse(source_code)
+
+    # 3. 提取 import
+    all_imports = self._extract_imports(tree)
+
+    # 4. 遍历顶层节点
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.FunctionDef):     # 顶层函数
+            chunks.append(self._parse_function(...))
+        elif isinstance(node, ast.ClassDef):      # 类
+            chunks.append(self._parse_class(...))
+            for item in node.body:                # 类内方法
+                if isinstance(item, ast.FunctionDef):
+                    chunks.append(self._parse_function(..., parent_class=node.name))</code></pre>
+
+<p><strong>关键设计：三层 chunk 结构</strong></p>
+<p>① <strong>文件级 (file)：</strong> 每个 .py 文件生成一个概览 chunk，包含前 2000 字符和所有 import。这能让后续检索时，即使用户搜的关键词只在文件名中出现，也能命中。</p>
+<p>② <strong>类级 (class)：</strong> 类定义单独一个 chunk。这样 "修改 User 类的某个方法" 这种 Issue 能直接命中。</p>
+<p>③ <strong>函数/方法级 (function/method)：</strong> 这是最细粒度的 chunk，是 Bug 定位的最终目标。每个函数都是独立的检索单元。</p>
+<p>④ <strong>测试识别：</strong> <code>symbol_type = "test" if func_name.startswith("test_")</code> —— 根据命名约定自动识别测试函数，后续检索时可以区分业务代码和测试代码。</p>
+
+<h3>chunk_id 的命名设计</h3>
+<pre><code>chunk_id = f"{repo_id}:{file_path}:{symbol_name}"
+# 例如: "ab12cd34:src/auth/login.py:validate_token"</code></pre>
+<p>这个 ID 包含三级信息：哪个仓库 → 哪个文件 → 哪个符号。在混合检索时，不同来源（向量和 BM25）的结果都通过 chunk_id 对齐，这是多索引合并的基础。</p>
+
+<div class="card tip">
+  <strong>面试话术：</strong>"我用 Python 内置的 ast 模块做代码的结构化解析。核心思路是把代码拆成三层 chunk——文件级、类级、函数级——每一层都是一个独立的检索单元。这样做的优势是检索粒度可配：粗粒度搜索用文件级，精确定位用函数级。同时我从 AST 中提取了 imports、参数列表、装饰器等结构化元数据，这些信息在后续 LLM 推理时提供了丰富的上下文。"
+</div>
+
+<!-- ────────── 7. 仓库索引器 ────────── -->
+<h2 id="repo-indexer">repo_indexer.py — 仓库索引器 + 混合检索</h2>
+
+<div class="card iv"><span class="badge purple">面试考点</span> 这是整个系统最核心的模块，RAG 检索增强的全部实现都在这里</div>
+
+<h3>导入仓库：import_repo()</h3>
+<pre><code>def import_repo(self, repo_url, branch="main"):
+    # 1. 从 URL 提取仓库名，MD5 生成唯一 repo_id
+    repo_id = hashlib.md5(f"{repo_url}:{branch}".encode()).hexdigest()[:12]
+    # 2. git clone --depth 1（浅克隆，只拿最新版本）
+    cmd = ["git", "clone", "--depth", "1", "--branch", branch, repo_url, local_path]
+    # 3. 容错：仓库已存在 → 直接返回，克隆失败 → 返回错误信息</code></pre>
+<p><strong>为什么用 shallow clone（--depth 1）？</strong> 完整 git 仓库可能几个 GB，但做代码分析只需要最新版本的代码。--depth 1 只拉取最新一次 commit，速度更快、磁盘占用更小。除非需要分析 git history，否则 shallow clone 是最佳实践。</p>
+
+<h3>扫描解析：scan_and_parse()</h3>
+<pre><code>def scan_and_parse(self, repo_id, local_path):
+    # 1. 递归找所有 .py 文件
+    py_files = list(Path(local_path).rglob("*.py"))
+    # 2. 排除非代码目录（venv, .git, node_modules, __pycache__...）
+    py_files = [f for f in py_files if not any(d in f.parts for d in exclude_dirs)]
+    # 3. 过滤大文件（>500KB）
+    # 4. 逐个用 AST 解析</code></pre>
+<p><strong>三个过滤策略：</strong>排除目录过滤掉虚拟环境和依赖包（它们不是项目的代码）、文件大小过滤（500KB+ 通常是自动生成的文件）、编码容错（用 errors="ignore" 跳过无法解码的文件）。这些策略确保索引只覆盖真正有价值的目标代码。</p>
+
+<h3>🌟🌟🌟 混合检索：hybrid_search() —— 面试高频考点 🌟🌟🌟</h3>
+<p>这是整个系统最核心的方法，「混合检索」是 RAG（检索增强生成）领域的经典面试题。</p>
+
+<pre><code>def hybrid_search(self, query, repo_id="", top_k=5) -> list[dict]:
+    # ── Step 1: 向量检索（语义相似度） ──
+    vs = self._load_vector_store(repo_id)
+    vec_docs = vs.similarity_search_with_score(query, k=top_k * 2)
+    # 每个 doc 带一个 L2 距离分数
+
+    # ── Step 2: BM25 关键词检索 ──
+    bm25, bm25_chunks = self._load_bm25(repo_id)
+    query_tokens = list(jieba.cut(query))     # jieba 分词
+    bm25_raw = bm25.get_scores(query_tokens)  # BM25 打分
+
+    # ── Step 3: 分数归一化 + 合并 ──
+    # 向量分数归一化：除以最大值，映射到 [0, 1]
+    # BM25 分数归一化：同上
+    for chunk_id, info in combined.items():
+        # 结构化分数：按路径/函数名匹配加分
+        for word in query_lower.split():
+            if word in symbol_name.lower(): structural += 0.3
+            if word in file_path.lower(): structural += 0.2
+        # 最终分数 = 加权求和
+        info["final_score"] = (
+            BM25_WEIGHT * info["bm25_score"] +
+            EMBEDDING_WEIGHT * info["vec_score"] +
+            STRUCTURAL_WEIGHT * info["structural_score"]
+        )
+
+    # ── Step 4: 按 final_score 降序排列，返回 top_k ──
+    return sorted_results[:top_k]</code></pre>
+
+<p><strong>关键设计点逐一拆解：</strong></p>
+
+<p><strong>① 为什么要做分数归一化？</strong> 向量检索返回的是 L2 距离（越小越好），BM25 返回的是相关性分数（越大越好），两者的值域完全不同（BM25 可能 0-50，向量距离可能 0-2）。不做归一化直接加权，某个检索源的分数会淹没另一个。归一化后都映射到 [0, 1]，才能公平加权。</p>
+
+<p><strong>② 为什么先各取 top_k*2 再合并？</strong> 这叫「过检索再重排序」。如果只取 top_k，可能某个非常好的候选只在向量或只在 BM25 中排名 top_k 以内，但在合并后能排进前几名。多取一倍是为了给合并阶段更大的候选池，提高召回率。</p>
+
+<p><strong>③ 结构化分数怎么设计的？</strong> 这是代码领域的先验知识编码。如果 Issue 中的词直接出现在函数名（如 Issue 说 "decode"，函数叫 <code>jwt_decode()</code>），这是强烈信号，加 0.3。如果出现在文件路径中（如 "auth" 匹配 <code>auth/login.py</code>），稍弱但仍有意义，加 0.2。如果文件路径包含 "test"，稍微微调 0.1。这些权重不是从数据中学的，而是根据经验设定的规则。</p>
+
+<p><strong>④ 为什么向量和 BM25 各占 0.4？</strong> 0.4+0.4+0.2=1.0，三个分数构成互补体系。BM25 保证精确命中（如函数名精确匹配），向量保证语义覆盖（如 "login failed" 能匹配到 <code>authenticate()</code>），结构化保证代码特有的层级相关性。4:4:2 是经验值，可以通过评测模块调优。</p>
+
+<div class="card tip">
+  <strong>面试话术：</strong>"混合检索的核心思想是取长补短。向量检索擅长语义理解——'登录失败'能匹配到 authenticate 函数——但对精确名称匹配不够敏感。BM25 恰好相反，对函数名、类名这些精确符号非常灵敏。我的做法是先分别检索后合并，关键步骤有三个：分数归一化（统一到 [0,1] 区间）、过检索扩大候选池（各取 k*2）、以及加入领域先验的结构化分数（函数名匹配 +0.3，路径匹配 +0.2）。最终按加权分数重排序返回 Top-K。"
+</div>
+
+<!-- ────────── 8. Issue 分析 Agent ────────── -->
+<h2 id="issue-analyzer">issue_analyzer.py — Issue 分析 Agent</h2>
+
+<pre><code>class IssueAnalyzer:
+    def analyze(self, issue_text) -> dict:
+        # Step 1: 用正则预提取错误堆栈
+        error_stack = self._extract_error_stack(issue_text)
+        # Step 2: LLM 结构化分析（关键词、模块、严重程度...）
+        response = self.llm.invoke([SystemMessage(...), HumanMessage(prompt)])
+        result = json.loads(response.content)
+        # Step 3: 如果 LLM 失败，fallback 到纯规则分析
+        except: result = self._fallback_analyze(issue_text)</code></pre>
+
+<p><strong>设计要点：</strong></p>
+<p><strong>① 为什么用 temperature=0.1 而不是 0？</strong> 过低的 temperature 有时会让 LLM 陷入重复循环。0.1 在确定性输出和灵活性之间取得平衡——足够稳定输出 JSON，又不会僵死。</p>
+
+<p><strong>② 为什么先正则提取、再 LLM 分析？</strong> 正则提取不依赖 LLM，零延迟、零成本。先把明显的错误堆栈摘出来，既减少了 LLM 需要处理的文本量，又能把正则结果作为 LLM 分析的"锚点"——哪怕 LLM 分析结果有偏差，错误堆栈信息仍然是准确的。</p>
+
+<p><strong>③ fallback_analyze 的实现思路：</strong> 纯规则系统。匹配 Python 内置异常名（AttributeError、KeyError...）、HTTP 状态码（4xx/5xx）、技术关键词（JWT、auth、database...），然后根据关键词组合判断严重程度。这保证了系统在最坏情况下仍然有基本的分析能力。</p>
+
+<p><strong>④ 为什么输出强制 JSON 格式？</strong> JSON 是结构化数据，下游 Agent 可以可靠地解析字段。如果 LLM 直接输出自然语言，下游解析会非常脆弱。Prompt 中说「只返回 JSON，不要其他文字」就是在约束输出格式。</p>
+
+<!-- ────────── 9. Bug 定位 Agent ────────── -->
+<h2 id="bug-locator">bug_locator.py — Bug 定位 Agent</h2>
+
+<pre><code>def locate(self, issue_analysis, search_results) -> dict:
+    # Step 1: 按文件去重，保留每个文件的最高分 chunk
+    file_best = {}
+    for item in search_results:
+        if fp not in file_best or item["score"] > file_best[fp]["score"]:
+            file_best[fp] = item
+    # Step 2: 同理按函数去重
+    # Step 3: 排序，取 Top-K
+    top_files = sorted(file_best.values(), key=lambda x: x["score"], reverse=True)[:TOP_K_FILES]
+    top_functions = ...
+    # Step 4: 让 LLM 解释「为什么这些是 Bug」
+    analysis = self._analyze_results(summary, error_type, keywords, top_files, top_functions)</code></pre>
+
+<p><strong>关键设计：定位结果不止是排序列表</strong></p>
+<p>如果只返回一个文件列表（如 ["auth.py", "middleware.py"]），用户不知道为什么选中了这些文件。BugLocator 多走了一步：让 LLM 阅读排序后的结果，<strong>生成自然语言的解释</strong>——「哪个文件最可能是 Bug 源头？为什么？建议从哪里开始排查？」。这就是 RAG 中 "G"（Generation）的价值——不仅检索，还要给出可解释的答案。</p>
+
+<p><strong>为什么先执行规则排序、再 LLM 分析，而不是让 LLM 直接做排序？</strong> 这是性能与质量的分工。规则排序（混合检索分数）快、确定性强、不依赖 LLM；LLM 分析慢、有随机性，但能提供深度解释。把确定性的排序交给规则系统，把需要理解的解释交给 LLM——各用所长。</p>
+
+<!-- ────────── 10. 工作流 ────────── -->
+<h2 id="workflow">workflow.py — LangGraph 工作流编排</h2>
+
+<div class="card iv"><span class="badge purple">面试考点</span> LangGraph StateGraph、条件边、状态管理</div>
+
+<h3>核心概念：StateGraph</h3>
+
+<pre><code>class PipelineState(TypedDict):
+    issue_text: str      # 输入
+    repo_id: str
+    issue_analysis: dict  # Agent 1 输出
+    search_results: list  # Agent 2 输出
+    location: dict        # Agent 3 输出
+    patch: dict           # Agent 4 输出
+    verification: dict    # Agent 5 输出
+    pr: dict              # Agent 6 输出
+    status: str           # 全局状态
+    mode: str             # "basic" | "full"</code></pre>
+
+<p><strong>为什么用 TypedDict 而不是普通 dict？</strong> TypedDict 提供类型检查——如果你写 <code>state["issue_analisys"]</code>（拼写错误），IDE 和 mypy 都会报错。同时它也是 LangGraph 的要求：状态字段必须明确声明，不能随意添加。</p>
+
+<h3>图的构建：build_workflow()</h3>
+
+<pre><code>def build_workflow(mode="basic"):
+    workflow = StateGraph(PipelineState)
+    # 添加节点
+    workflow.add_node("analyze_issue", analyze_issue_node)
+    workflow.add_node("search_code", search_code_node)
+    workflow.add_node("locate_bug", locate_bug_node)
+    # 设置入口
+    workflow.set_entry_point("analyze_issue")
+    # 串行边
+    workflow.add_edge("analyze_issue", "search_code")
+    workflow.add_edge("search_code", "locate_bug")
+    # 条件分支
+    if mode == "full":
+        workflow.add_conditional_edges(
+            "locate_bug", decide_mode,
+            {"generate_patch": "generate_patch", "done_basic": END}
+        )
+    return workflow.compile()</code></pre>
+
+<p><strong>条件边的设计模式：</strong> <code>add_conditional_edges</code> 接收一个决策函数 <code>decide_mode</code>，该函数读 state 返回一个决策字符串，然后映射到不同的下一节点。这实现了 <strong>"基于状态的动态路由"</strong>——同一个节点完成后，根据 state 的 mode 字段走不同分支。这是 LangGraph 相比于硬编码 if-else 链的核心优势。</p>
+
+<p><strong>V1 vs V3 的巧妙实现：</strong> V1（basic）和 V3（full）共享同一个图结构，通过 <code>mode</code> 参数控制是否添加 Patch/验证/PR 三个节点。这是一个优雅的设计：不需要维护两套图，只需要一个参数切换。</p>
+
+<h3>每个 Node 函数的模式</h3>
+<pre><code>def analyze_issue_node(state: PipelineState) -> PipelineState:
+    print(f"[Workflow] ① Issue 分析: ...")
+    state["issue_analysis"] = issue_analyzer.analyze(state["issue_text"])
+    state["status"] = "issue_analyzed"
+    return state   # 返回更新后的状态</code></pre>
+<p>LangGraph 的节点函数遵循函数式编程：<strong>输入 state → 修改 state → 返回 state</strong>。状态是不可变更新的——你返回一个新的 state dict，LangGraph 负责合并。这样每个节点都可以看全量上下文，不依赖全局变量。</p>
+
+<!-- ────────── 11. FastAPI 服务 ────────── -->
+<h2 id="main">main.py — FastAPI 服务</h2>
+
+<h3>API 设计</h3>
+<table>
+  <tr><th>方法</th><th>端点</th><th>功能</th></tr>
+  <tr><td>POST</td><td><code>/api/repos/import</code></td><td>GitHub 远程导入</td></tr>
+  <tr><td>POST</td><td><code>/api/repos/import-local</code></td><td>本地文件夹导入</td></tr>
+  <tr><td>POST</td><td><code>/api/repos/{id}/index</code></td><td>建立代码索引</td></tr>
+  <tr><td>POST</td><td><code>/api/issues/analyze</code></td><td>V1 Issue 分析+定位</td></tr>
+  <tr><td>POST</td><td><code>/api/issues/analyze-full</code></td><td>V3 全链路</td></tr>
+  <tr><td>POST</td><td><code>/api/eval/run</code></td><td>评测</td></tr>
+  <tr><td>GET</td><td><code>/api/tasks/{id}</code></td><td>获取异步任务结果</td></tr>
+  <tr><td>GET</td><td><code>/api/health</code></td><td>健康检查</td></tr>
+</table>
+
+<p><strong>设计要点：</strong></p>
+<p><strong>① Pydantic 请求模型：</strong> 每个 API 都有对应的 <code>BaseModel</code> 子类定义输入格式，FastAPI 自动做参数校验和类型转换。这比手动 <code>request.json()</code> + 字段检查的方式安全得多，也是 FastAPI 的最佳实践。</p>
+<p><strong>② 异步任务模式：</strong> 分析是耗时操作（LLM 调用可能好几秒），所以 POST 请求先创建 task_id 并立即返回，用户可以 GET task 结果。这是一个简单的异步模式，虽然没有用 Celery 那么重，但在 V1 阶段够用。</p>
+<p><strong>③ 内存字典做任务存储：</strong> <code>tasks: dict[str, dict] = {}</code> 用内存字典存任务状态，注释明确写了"后续可换数据库"。这是一个务实的工程决策——先跑通再优化，不要在 V1 阶段过度设计。（面试时提这一点很加分）</p>
+<p><strong>④ repo_map 做二级查找：</strong> 索引后的仓库可能不在内存中，所以 API 会先从内存 map 找，找不到再扫描磁盘。这个容错设计确保了服务重启后仍能正常工作。</p>
+
+<!-- ────────── 12. Patch 生成 ────────── -->
+<h2 id="patch-generator">patch_generator.py — Patch 生成 Agent</h2>
+
+<pre><code>class PatchGenerator:
+    def generate(self, issue_analysis, location) -> dict:
+        # 构建代码上下文（Top 3 函数）
+        context_parts = []
+        for func in top_functions[:3]:
+            context_parts.append(f"### {func['file_path']}::{func['symbol_name']}\n```\n{func['content_preview']}\n```")
+        # 让 LLM 生成 unified diff
+        response = self.llm.invoke([SystemMessage(...), HumanMessage(prompt)])</code></pre>
+
+<p><strong>设计约束（写在注释里）：</strong></p>
+<p>① 只能修改 Top-K 文件 → 防止 LLM 过度修改，确保改动最小化</p>
+<p>② 必须输出 unified diff 格式 → 标准格式，可直接被 git apply 使用</p>
+<p>③ 必须说明修改原因和风险 → 让人类 review 时有据可依</p>
+<p>④ 不允许大规模重构 → 每个 Patch 应该只解决当前 Issue，不做额外优化</p>
+<p>这些约束反映了<strong>工程实用性</strong>——在真实生产环境中，你的 Patch 要被别人 review，破坏性太大会被 reject。</p>
+
+<p><strong>fallback diff 的逻辑：</strong> 当 LLM 不可用时，生成一个基本的 diff 框架（标注修改位置和提示）。这保证了系统在任何情况下都有输出，不会白屏。</p>
+
+<!-- ────────── 13. PR Agent ────────── -->
+<h2 id="pr-agent">pr_agent.py — PR 生成 Agent</h2>
+
+<p>PR Agent 的逻辑相对简单，本质上是一个<strong>信息聚合 + 格式化</strong>的角色。它从上游四个 Agent（Issue分析、Bug定位、Patch、验证）拿结果，合成一份专业的 PR 文档。核心 prompt 要求输出：PR 标题（英文、50字以内）、详细描述（中文）、CheckList 审查项。</p>
+
+<p><strong>为什么 PR 标题要求英文？</strong> 因为绝大多数开源项目使用英文作为 PR 默认语言。中文摘要放在描述部分，供国内团队内部 review。</p>
+
+<!-- ────────── 14. 测试执行器 ────────── -->
+<h2 id="test-runner">test_runner.py — 测试执行器</h2>
+
+<pre><code>def _run_command(self, cmd, cwd, tool_name):
+    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=60)
+    return {"status": "passed" if proc.returncode == 0 else "failed", ...}
+    except subprocess.TimeoutExpired: return {"status": "timeout", ...}
+    except FileNotFoundError:         return {"status": "skipped", ...}</code></pre>
+
+<p><strong>三种状态设计：passed / failed / skipped</strong>——tool 没安装时不报错，返回 "skipped" 并标注原因。这是 "graceful degradation"（优雅降级）的体现。</p>
+<p><strong>为什么用 subprocess 而不是 Python API？</strong> pytest、ruff、mypy 都是命令行工具，通过 subprocess 调用和开发者在终端里运行完全一致。如果用 Python API，行为和命令行可能不同，导致「本地跑能过但 CI 失败」的情况。</p>
+
+<!-- ────────── 15. 评测 ────────── -->
+<h2 id="benchmark">benchmark.py — 评测模块</h2>
+
+<div class="card iv"><span class="badge purple">面试考点</span> 模型评测指标的设计</div>
+
+<pre><code>class Benchmark:
+    def evaluate_localization(self, predicted_files, ground_truth_file):
+        rank = None
+        for i, f in enumerate(predicted_files):
+            if ground_truth_file.endswith(f) or f.endswith(ground_truth_file):
+                rank = i + 1; break
+        return {
+            "top1": rank == 1,      # 第一名就命中？
+            "top3": rank <= 3,      # 前三名命中？
+            "top5": rank <= 5,      # 前五名命中？
+            "reciprocal_rank": 1.0 / rank if rank else 0.0,  # MRR
+        }</code></pre>
+
+<p><strong>四个核心指标：</strong></p>
+<p>① <strong>Top-1/3/5 Accuracy：</strong> 真实 Bug 文件在预测列表前 1/3/5 名中的概率。Top-1 是最严苛的（必须一次命中），Top-5 更宽松（给系统一定的容错空间）。在面试中报告时可以这样：「在我们的 benchmarks 上，Top-3 准确率是 X%，意味着 3 次点击内能找到 Bug 的概率是 X%。」</p>
+<p>② <strong>MRR (Mean Reciprocal Rank)：</strong> 倒数排名的均值。如果 Bug 排第 1 名，MRR 贡献 1.0；排第 2 名贡献 0.5；排第 10 名贡献 0.1。MRR 综合反映了「系统有没有把真正相关的排在前面」。比单纯 "命中与否" 更细致。</p>
+
+<div class="card tip">
+  <strong>面试话术：</strong>"我设计了四个评测指标来评估 Bug 定位效果。Top-K 准确率反映的是用户实际体验——几次点击能找到 Bug；MRR（Mean Reciprocal Rank）更细致地衡量排序质量——系统有没有把正确答案放在尽可能靠前的位置。此外还可以扩展评估 Patch 是否可 apply、测试是否通过等端到端指标。评测体系的设计关键是：指标要能反映真实的用户体验，不能只是纸面数字。"
+</div>
+
+<!-- ────────── 16. 前端 ────────── -->
+<h2 id="frontend">frontend/index.html — Web 前端</h2>
+
+<p>前端用了<strong>零框架方案</strong>——纯 HTML + CSS + JS，没有任何 React/Vue/构建工具。这样做的原因：项目定位是 AI 工程而非前端项目。一个单文件 HTML 足够展示功能，而且部署极简（不需要 npm build，直接 serve）。</p>
+
+<p><strong>不过，前端有几个值得提的设计：</strong></p>
+<p>① <strong>CSS 变量做主题：</strong> 所有颜色通过 <code>:root</code> 下的 CSS 变量（如 <code>--bg</code>、<code>--accent</code>）管理，而不是硬编码。换暗色/亮色主题只需改几个变量。</p>
+<p>② <strong>Pipeline 步骤可视化：</strong> 6 个步骤的进度条用 CSS class 切换（active/done/fail），直观展示当前进度。</p>
+<p>③ <strong>健康检查轮询：</strong> <code>setInterval(health, 30000)</code> 每 30 秒检查后端是否在线，状态指示灯实时更新。</p>
+
+<!-- ═══════════════════════════════════ -->
+<!--       面 试 备 战 专 区           -->
+<!-- ═══════════════════════════════════ -->
+<h2 id="interview">🎯 校招面试备战</h2>
+
+<div class="card">
+  <h3>面试官可能会问什么？</h3>
+  <p>面试官通常是后端/AI 方向的资深工程师。对于一个 AI Agent 项目，他们关心的不是"你用了什么工具"，而是<strong>「你为什么这样设计？」「遇到什么问题？怎么解决的？」「如果让你重做，哪里会不一样？」</strong></p>
+  <p>以下按高频考点分类整理了 15 道面试题及参考答案。</p>
+</div>
+
+<!-- ── 架构类 ── -->
+<h2 id="qa-arch">一、架构设计类问题</h2>
+
+<div class="qa" id="qa1">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q1: 这个项目的整体架构是怎样的？各模块如何协作？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>这是六层架构。最上层是 Web 前端，中间是 FastAPI 做请求路由，核心是 LangGraph 编排的 6 个 Agent 组成的有向无环图。每个 Agent 是独立职责的 LLM 调用单元——Issue 分析 Agent 理解问题，检索 Agent 找相关代码，Bug 定位 Agent 确定位置，Patch 生成 Agent 写修复，测试执行器验证修复，PR Agent 生成 Pull Request。底层是混合检索引擎（BM25 + 向量 + 结构化分数），为 Agent 提供代码检索能力。</p>
+<p>设计上的关键决策是分层解耦：每一层只依赖下一层的接口，不跨层调用。比如 Bug 定位 Agent 不直接读磁盘文件，而是通过 Indexer 的 hybrid_search 接口获取检索结果。这样如果未来想换检索方案（比如从 ChromaDB 换到 Milvus），只需要改 Indexer，Agent 代码不动。</p>
+</div>
+</div>
+
+<div class="qa" id="qa2">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q2: 为什么选择 LangGraph 做编排而不是自己写一个简单的串行调用？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>有三个核心原因。第一，LangGraph 的 StateGraph 提供了声明式的状态管理——所有 Agent 的输入输出都通过统一的 state 字典传递，而不需要手动维护全局变量。第二，条件边（conditional_edges）让流程分支变得优雅——我的项目有 V1（基础）和 V3（全链路）两种模式，条件边可以根据 state.mode 动态决定下一步走哪个节点，如果硬编码 if-else 链，复杂度会随节点数指数增长。第三，可扩展性：这是一个 6 节点的 DAG，未来可能扩展更多节点（比如自动回滚、A/B 测试等），LangGraph 的图结构天然支持这种扩展——只需要 add_node + add_edge，不影响已有逻辑。</p>
+</div>
+</div>
+
+<div class="qa" id="qa3">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q3: V1 有哪些问题？你做的 V3 改进了什么？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>V1 只覆盖了 Issue 分析 → 检索 → 定位这三步，到这里就停了。实际上找到 Bug 只是第一步，还要修复、验证、提交 PR。V3 扩展了后三步——Patch 生成、测试验证、PR 生成——形成了一个完整的闭环。另一个关键改进是评测体系：V1 没有评测，你无法量化系统的好坏；V3 加入了 Benchmark 模块，能计算 Top-K 准确率和 MRR，有了数据才能做 A/B 实验、调参数。最后是前端可视化——V3 的 6 步 Pipeline 进度条让用户实时看到系统在做什么，这是做 toB 产品很关键的用户体验。</p>
+</div>
+</div>
+
+<!-- ── 检索类 ── -->
+<h2 id="qa-search">二、检索引擎类问题</h2>
+
+<div class="qa" id="qa4">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q4: 你为什么做混合检索？只用向量检索不够吗？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>纯向量检索在代码场景有两个致命缺陷。第一，精确匹配弱——Issue 里说 "jwt_decode function error"，向量检索可能因为语义相似把其他 decode 相关函数也拉出来，但 BM25 可以直接命中函数名。第二，代码中大量使用缩写、驼峰命名（如 getUserById），这些不是自然语言，嵌入模型的语义理解效果打折扣。反过来，纯 BM25 无法理解同义词——"登录失败" 和 "authentication error" 在人看来是同一个意思，但 BM25 只做词频匹配。所以我做了三路混合——BM25 负责精确命中、向量负责语义覆盖、结构化分数（函数名/路径匹配）注入代码领域先验。三个信号加权求和，取长补短。</p>
+</div>
+</div>
+
+<div class="qa" id="qa5">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q5: 混合检索中为什么需要分数归一化？怎么做的？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>归一化的必要性在于不同打分函数的输出值域完全不同。ChromaDB 返回的是 L2 距离（典型值 0.1-0.8），BM25 返回的是词频加权的相关性分数（可能是 0-50）。如果不归一化，假设 BM25 分数普遍在 30 左右，向量分数在 0.5 左右，那 40% * 30 会完全淹没 40% * 0.5——BM25 主导了最终排名，向量检索形同虚设。</p>
+<p>我的归一化方案是 max-normalization——每个信号源都除以该源的最大分数，映射到 [0,1] 区间。这样做的前提假设是：同一次查询中，不同检索源返回的最高分 chunk"质量相当"，都是该源的最佳候选。如果这个假设不成立（比如某次向量检索结果都很差），可以考虑 min-max 归一化或者 rank-based 融合（如 Borda Count），这是未来的优化方向。</p>
+</div>
+</div>
+
+<div class="qa" id="qa6">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q6: 如果让你改进检索系统，你会做什么？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>几个方向。第一，用 reranker 做精排：现在混合分数是固定权重线性组合，可以用一个轻量级 Cross-Encoder（如 BGE-Reranker）对 Top-20 候选做二次排序，效果通常比线性融合好很多。第二，加入代码专用的嵌入模型：现在用的是通用嵌入模型 nomic-embed-text，换成 CodeBERT 或 UniXcoder 这种代码预训练模型，对代码的语义理解会好很多。第三，学习权重而非固定权重：4:4:2 是我拍脑袋的，可以通过 learning-to-rank 在评测集上学习最优权重。第四，加入依赖图检索——如果 Bug 在 auth.py，那 auth.py 的 import 依赖链上的文件也应该进入候选池，这是代码特有的结构化信息。</p>
+</div>
+</div>
+
+<!-- ── Agent 类 ── -->
+<h2 id="qa-agent">三、Agent 设计类问题</h2>
+
+<div class="qa" id="qa7">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q7: 你的 LLM 调用有什么最佳实践？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>我总结了四个实践。一是 temperature 选择：分析类 Agent 用 0.1（接近确定性），创意生成类（如 PR 标题）用 0.2（稍微给点变化）。二是强制 JSON 输出：Prompt 中明确要求「只返回 JSON」，并做 Markdown 代码块清洗（去掉 ```json 标记），因为 LLM 经常在 JSON 外包代码块。三是 fallback 容错：每个 Agent 的 LLM 调用都包在 try-except 里，LLM 失败时走 rule-based 退化逻辑——比如 Issue 分析退化为正则匹配，Patch 生成退化为基础 diff 框架。四是 SystemMessage 设定角色：每个 Agent 都给 SystemMessage 设定了专业角色（"你是资深软件工程师"），这比只给 HumanMessage 的效果好得多，因为 SystemMessage 会影响 LLM 的语气和专业度。</p>
+</div>
+</div>
+
+<div class="qa" id="qa8">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q8: 如果 LLM 生成的内容有错误（幻觉），你如何处理？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>幻觉在 AI 应用中不可避免，关键是让系统在幻觉发生时不会造成破坏。我的策略是分层防御。第一层是输出格式约束——强制 JSON 输出，如果 JSON 解析失败就触发 fallback，不会让脏数据流到下游。第二层是内容约束——Patch 生成 Agent 明确要求只能修改 Top-K 文件中已有的代码，不能生成不存在的内容。第三层是验证层——Patch 生成后跑 pytest/ruff/mypy，如果有错误会被捕获并体现在 PR 的 risk_assessment 中，人类 reviewer 能看到「测试未通过」的标记。第四层是人工审核——所有 PR 都包含 risk_level 和 checklist，最终审核权在人类手里。核心思想是：AI 可以犯错，但系统要把错误控制在可检测、可回滚的范围内。</p>
+</div>
+</div>
+
+<div class="qa" id="qa9">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q9: 你如何评估 Agent 的好坏？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>我设计了分层评测。定位 Agent 用 Top-K 准确率和 MRR——能直接量化排序质量。但端到端的评测更难：Patch 是否真的 fix 了 Bug？这需要可复现的测试用例（Bug 引入前测试失败、Patch 后测试通过）。我在 benchmark.py 中预留了 run_benchmark 方法，可以对接标注好的 test_cases 数据集。PR 质量的评测更主观——标题是否准确、描述是否充分——目前依赖人工 review，未来可以用 LLM-as-Judge（让一个更强的模型打分）。核心观点：Agent 的评测不能只看一个指标，要从定位精度、修复质量、PR 可读性三个维度综合评估。</p>
+</div>
+</div>
+
+<!-- ── 代码实现类 ── -->
+<h2 id="qa-code">四、代码实现类问题</h2>
+
+<div class="qa" id="qa10">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q10: ast_parser 中如何区分函数和方法？怎么做错误处理？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>函数和方法的差异不在 AST 节点类型（都是 FunctionDef），而在<strong>位置</strong>——顶层的是函数，在 ClassDef body 里的是方法。实现上，parse_file 遍历顶层节点时，遇到 FunctionDef 调用 _parse_function(is_method=False)，遇到 ClassDef 后遍历其 body 中的 FunctionDef 调用 _parse_function(is_method=True, parent_class=class_name)。</p>
+<p>错误处理方面，我针对 SyntaxError 做了专门处理——如果 ast.parse() 抛出 SyntaxError（文件有语法错误），不抛异常，而是返回只包含文件级 chunk 的结果。这样索引过程不会因为一个坏文件而中断。这是 robustness 的体现。</p>
+</div>
+</div>
+
+<div class="qa" id="qa11">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q11: ast_parser 中 _get_attr_name 递归函数是做什么的？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>这个函数处理复合装饰器名称。比如 <code>@pytest.mark.skip</code> 在 AST 中不是一个简单的 Name 节点，而是 <code>Attribute(value=Attribute(value=Name('pytest'), attr='mark'), attr='skip')</code> 的嵌套结构。递归函数从最内层 Name 开始，逐层拼接 attr，最终还原出 <code>pytest.mark.skip</code> 的完整名称。如果不做这个处理，装饰器信息就会丢失，后续检索时无法利用装饰器的语义信息（比如 @pytest.mark.skip 说明这个测试被跳过了，可能和 Issue 有关）。</p>
+</div>
+</div>
+
+<div class="qa" id="qa12">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q12: repo_indexer 中 hybrid_search 为什么要"过检索"(k*2)？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>过检索是为了提高召回率。假设最终要返回 Top-5，如果向量和 BM25 各只取 5 个，那两者取并集最多 10 个候选。但可能存在这种情况：真正相关的 chunk 在向量检索中排第 6、在 BM25 中排第 8——都不在各自的 Top-5 中，但合并后可能进入总体 Top-5。各取 k*2（即 10 个）扩大了候选池，给了合并阶段更多选择。代价是多了几个候选的计算开销，但合并只是做加权求和，性能影响微乎其微。这是信息检索中经典的 recall-precision tradeoff——在这里选择了更高的 recall。</p>
+</div>
+</div>
+
+<!-- ── 场景设计类 ── -->
+<h2 id="qa-scenario">五、场景设计类问题</h2>
+
+<div class="qa" id="qa13">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q13: 如果仓库有 100 万行代码，现在的系统哪些地方会出问题？怎么解决？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>几个瓶颈。第一，AST 解析现在是单进程串行的，100 万行可能要几分钟。解决方案是 multiprocessing + 文件级并行。第二，向量检索——ChromaDB 的 HNSW 索引在百万级向量下仍可用，但内存需求会增长。核心问题是 embedding 生成——每个 chunk 都要调用一次 Ollama，100 万行可能对应几万个 chunk，embedding 时间会很长。可以做增量索引（只对新/修改的文件重新 embedding），也可以换用更快的嵌入服务。第三，BM25 的倒排索引本身对百万文档是高效的（这是搜索引擎的基本功），但 jieba 分词是 CPU 密集型，可以预处理缓存。第四，LLM 上下文窗口——如果 Top-10 函数的代码加起来超过 4096 tokens，就需要做上下文压缩（只保留关键行、去掉注释等）。</p>
+</div>
+</div>
+
+<div class="qa" id="qa14">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q14: 如果支持多语言（不只 Python），你会怎么设计？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>核心改动在 ast_parser。现在的 ASTParser 是 Python 专用的，需要抽象出一个 LanguageParser 接口，每种语言各自实现。接口设计大概是这样：<code>parse_file(language, source_code) -> List[CodeChunk]</code>，其中 CodeChunk 是语言无关的数据结构。对于 Python 用 ast 模块，对于 JavaScript/TypeScript 可能需要用 tree-sitter 做 AST 解析，对于 Java 可能用 javalang。嵌入模型也要考虑多语言——现在的 nomic-embed-text 对非英文代码的语义理解可能不好，可以换成 multilingual-e5 或 CodeBERT。BM25 的分词器也要语言适配——jieba 是中文分词，英文用空格分词就够了。</p>
+</div>
+</div>
+
+<div class="qa" id="qa15">
+<div class="q" onclick="this.parentElement.classList.toggle('open')">Q15: 如果部署到生产环境，还需要做哪些改造？</div>
+<div class="a">
+<p><strong>参考回答：</strong></p>
+<p>第一，任务队列。现在分析请求是同步的（虽然用了异步 API 模式，但任务在同一个进程中执行），生产环境需要 Celery + Redis 做异步任务队列，支持任务重试和优先级。第二，数据库持久化——任务状态从内存字典迁移到 PostgreSQL/MySQL，支持查询历史记录。第三，LLM 服务高可用——Ollama 单实例不可靠，需要部署多个实例 + 负载均衡，或者切到 OpenAI/Anthropic 的 API（有 SLA 保障）。第四，安全和隔离——subprocess 执行测试代码有安全风险，需要 Docker 沙箱隔离。第五，监控——接入 Prometheus + Grafana，监控 LLM 调用延迟、检索 QPS、Patch 成功率等指标。第六，CI/CD 集成——做成 GitHub App 或 GitLab CI plugin，让开发者直接在 PR 中触发分析。</p>
+</div>
+</div>
+
+<!-- ═══════════ END ═══════════ -->
+<div class="card tip" style="margin-top:40px;">
+  <h3>面试心态建议</h3>
+  <p>校招面试中，面试官更看重 <strong>「你理解问题有多深」</strong>而不是「你用了多少工具」。与其罗列技术栈，不如深入讲一个模块的设计——比如混合检索中为什么需要归一化、怎么处理边界情况、实践中遇到了什么问题。展现"我做了工程权衡"比展现"我会调用 API"重要一百倍。</p>
+  <p>记住这个公式：<strong>我做了什么 → 为什么这样做（和其他方案的 trade-off）→ 如果重来会改进什么</strong>。这个三段式回答几乎适用于所有面试题。</p>
+</div>
+
+</main>
+
+<script>
+// 简单的 scroll spy
+const navLinks = document.querySelectorAll('#nav a');
+const sections = [...navLinks].map(a => document.getElementById(a.getAttribute('href').slice(1))).filter(Boolean);
+
+window.addEventListener('scroll', () => {
+  let current = '';
+  for (const s of sections) {
+    if (window.scrollY >= s.offsetTop - 100) current = s.id;
+  }
+  navLinks.forEach(a => {
+    a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+  });
+});
+
+// 键盘导航展开/折叠 QA
+document.addEventListener('keydown', e => {
+  if (e.key === 'o' && e.ctrlKey) {
+    document.querySelectorAll('.qa').forEach(qa => qa.classList.toggle('open'));
+    e.preventDefault();
+  }
+});
+</script>
+
+</body>
+</html>

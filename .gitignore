@@ -1,0 +1,29 @@
+# ── Python 运行时 ──
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# ── 虚拟环境 ──
+.venv/
+venv/
+env/
+.env
+
+# ── IDE ──
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── 数据目录（可重新生成） ──
+data/repos/
+data/indexes/chroma/
+data/indexes/*.pkl
+data/logs/
+
+# ── 系统文件 ──
+.DS_Store
+Thumbs.db
